@@ -1,0 +1,121 @@
+<?php
+session_start();
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+require_once 'includes/dbconnection.php';
+require_once 'includes/oauth-config.php';
+require_once 'vendor/autoload.php';
+
+$provider = new TheNetworg\OAuth2\Client\Provider\Azure([
+    'clientId'               => MICROSOFT_CLIENT_ID,
+    'clientSecret'           => MICROSOFT_CLIENT_SECRET,
+    'redirectUri'            => MICROSOFT_REDIRECT_URI,
+    'tenant'                 => MICROSOFT_TENANT,
+    'scopes'                 => ['openid', 'profile', 'email', 'User.Read'],
+    'defaultEndPointVersion' => '2.0',
+]);
+
+// Step 1: No code yet — redirect user to Microsoft login
+if (!isset($_GET['code'])) {
+    $authUrl = $provider->getAuthorizationUrl();
+    $_SESSION['oauth2state'] = $provider->getState();
+    header('Location: ' . $authUrl);
+    exit;
+}
+
+// Step 2: Validate state to prevent CSRF
+if (empty($_GET['state']) || $_GET['state'] !== $_SESSION['oauth2state']) {
+    unset($_SESSION['oauth2state']);
+    exit('Invalid OAuth state. Please try again.');
+}
+unset($_SESSION['oauth2state']);
+
+// Step 3: Exchange code for access token
+try {
+    $token = $provider->getAccessToken('authorization_code', [
+        'code' => $_GET['code'],
+    ]);
+} catch (Exception $e) {
+    exit('Failed to get access token: ' . $e->getMessage());
+}
+
+// Step 4: Get user profile from Microsoft Graph
+try {
+    $me = $provider->get('https://graph.microsoft.com/v1.0/me', $token);
+} catch (Exception $e) {
+    exit('Failed to get user profile: ' . $e->getMessage());
+}
+
+$oauthId  = $me['id']          ?? '';
+$email    = $me['mail']        ?? $me['userPrincipalName'] ?? '';
+$fullName = $me['displayName'] ?? '';
+$dob      = (isset($me['birthday']) && $me['birthday'] !== '') ? $me['birthday'] : null;
+
+if (empty($email)) {
+    exit('Could not retrieve email from Microsoft account.');
+}
+
+// Step 5: Fetch profile photo from Microsoft Graph
+$photoPath = null;
+try {
+    $photoDir = __DIR__ . '/images/oauth/';
+    if (!is_dir($photoDir)) {
+        mkdir($photoDir, 0755, true);
+    }
+
+    $photoResponse = $provider->getHttpClient()->request('GET',
+        'https://graph.microsoft.com/v1.0/me/photo/$value',
+        ['headers' => ['Authorization' => 'Bearer ' . $token->getToken()]]
+    );
+
+    if ($photoResponse->getStatusCode() === 200) {
+        $photoFilename = 'ms_' . $oauthId . '.jpg';
+        file_put_contents($photoDir . $photoFilename, $photoResponse->getBody()->getContents());
+        $photoPath = 'images/oauth/' . $photoFilename;
+    }
+} catch (Exception $e) {
+    // Photo not available — continue without it
+    $photoPath = null;
+}
+
+// Step 6: Check if user already exists by oauth_id or email
+$stmt = $dbh->prepare("SELECT ID FROM tbluser WHERE oauth_id = :oid OR Email = :email LIMIT 1");
+$stmt->execute([':oid' => $oauthId, ':email' => $email]);
+$existing = $stmt->fetch(PDO::FETCH_OBJ);
+
+if ($existing) {
+    // Returning user — update profile data (sync on re-login)
+    $upd = $dbh->prepare("UPDATE tbluser SET
+        FullName       = COALESCE(NULLIF(:name, ''),  FullName),
+        DateOfBirth    = COALESCE(:dob,               DateOfBirth),
+        ProfilePhoto   = COALESCE(:photo,             ProfilePhoto),
+        oauth_id       = :oid,
+        oauth_provider = 'microsoft'
+        WHERE ID = :id");
+    $upd->execute([
+        ':name'  => $fullName,
+        ':dob'   => $dob,
+        ':photo' => $photoPath,
+        ':oid'   => $oauthId,
+        ':id'    => $existing->ID,
+    ]);
+    $_SESSION['hbmsuid'] = $existing->ID;
+    $_SESSION['login']   = $email;
+} else {
+    // New user — auto-register
+    $ins = $dbh->prepare("INSERT INTO tbluser (FullName, Email, Password, oauth_provider, oauth_id, DateOfBirth, ProfilePhoto)
+                          VALUES (:name, :email, '', 'microsoft', :oid, :dob, :photo)");
+    $ins->execute([
+        ':name'  => $fullName,
+        ':email' => $email,
+        ':oid'   => $oauthId,
+        ':dob'   => $dob,
+        ':photo' => $photoPath,
+    ]);
+    $_SESSION['hbmsuid'] = $dbh->lastInsertId();
+    $_SESSION['login']   = $email;
+}
+
+header('Location: index.php');
+exit;
