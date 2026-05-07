@@ -7,25 +7,49 @@
 --             three new tables are created for KYC records, audit log, and
 --             booking risk flags.
 --
--- SAFE TO RE-RUN: every ALTER uses IF NOT EXISTS; every CREATE uses
---                 IF NOT EXISTS so this is fully idempotent.
+-- SAFE TO RE-RUN: column additions are guarded by information_schema checks
+--                 (MySQL 8.0 does not support ALTER TABLE ADD COLUMN IF NOT EXISTS)
 -- =============================================================================
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ---------------------------------------------------------------------------
--- 1. tbluser — add KYC status columns
+-- 1. tbluser — add KYC status columns (MySQL 8.0 compatible guards)
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE `tbluser`
-  ADD COLUMN IF NOT EXISTS `kyc_status`      ENUM('unverified','pending','verified','rejected','expired')
-                                             NOT NULL DEFAULT 'unverified'
-      AFTER `ProfilePhoto`,
-  ADD COLUMN IF NOT EXISTS `kyc_verified_at` TIMESTAMP NULL DEFAULT NULL
-      AFTER `kyc_status`,
-  ADD COLUMN IF NOT EXISTS `kyc_expiry_date` DATE NULL DEFAULT NULL
-      AFTER `kyc_verified_at`;
+-- 1a. kyc_status
+SET @col := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbluser' AND COLUMN_NAME = 'kyc_status'
+);
+SET @sql := IF(@col = 0,
+  "ALTER TABLE `tbluser` ADD COLUMN `kyc_status` ENUM('unverified','pending','verified','rejected','expired') NOT NULL DEFAULT 'unverified' AFTER `ProfilePhoto`",
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 1b. kyc_verified_at
+SET @col := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbluser' AND COLUMN_NAME = 'kyc_verified_at'
+);
+SET @sql := IF(@col = 0,
+  'ALTER TABLE `tbluser` ADD COLUMN `kyc_verified_at` TIMESTAMP NULL DEFAULT NULL AFTER `kyc_status`',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 1c. kyc_expiry_date
+SET @col := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tbluser' AND COLUMN_NAME = 'kyc_expiry_date'
+);
+SET @sql := IF(@col = 0,
+  'ALTER TABLE `tbluser` ADD COLUMN `kyc_expiry_date` DATE NULL DEFAULT NULL AFTER `kyc_verified_at`',
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- ---------------------------------------------------------------------------
 -- 2. tbl_kyc_records — versioned, encrypted passport MRZ fields per attempt
