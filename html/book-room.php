@@ -36,10 +36,11 @@ if (empty($_SESSION['hbmsuid'])) {
     // (pending / flagged) go to kyc-status.php to read their state; everyone else
     // goes straight to the upload form (per design Q1=A).
     if ($gateStatus !== 'verified') {
+        $rmid = intval($_GET['rmid']);
         if ($gateStatus === 'pending' || $gateStatus === 'rejected') {
-            header('Location: kyc-status.php?reason=booking');
+            header("Location: kyc-status.php?reason=booking&rmid=$rmid");
         } else {
-            header('Location: kyc-verify.php?reason=booking');
+            header("Location: kyc-verify.php?reason=booking&rmid=$rmid");
         }
         exit;
     }
