@@ -3,13 +3,16 @@ session_start();
 require_once 'includes/auth_check.php';
 require_once 'includes/dbconnection.php';
 require_once 'includes/encryption.php';
+require_once 'includes/kyc-handler.php';
 
 $uid = $_SESSION['hbmsuid'];
 
-// 1. Get OAuth name from tbluser
-$q = $dbh->prepare('SELECT FullName FROM tbluser WHERE ID=:uid');
+// 1. Get Anchor Name (registration_name) from tbluser
+// We match against the name at registration, not the current profile name, to prevent impersonation.
+$q = $dbh->prepare('SELECT registration_name, FullName FROM tbluser WHERE ID=:uid');
 $q->execute([':uid' => $uid]);
-$oauthName = trim($q->fetchColumn() ?? '');
+$row = $q->fetch(PDO::FETCH_ASSOC);
+$anchorName = trim($row['registration_name'] ?? $row['FullName'] ?? '');
 
 // 2. Get confirmed OCR data from kyc-verify.php form
 $passportName   = strtoupper(trim($_POST['passport_name']   ?? ''));
@@ -25,25 +28,65 @@ if ($passportName === '' || $passportNumber === '') {
 }
 
 // 3. 3-Tier Fuzzy Name Match (Levenshtein distance)
-$oauthUpper = strtoupper($oauthName);
-$maxLen     = max(strlen($oauthUpper), strlen($passportName));
-$distance   = levenshtein($oauthUpper, $passportName);
-$matchScore = ($maxLen > 0) ? (1 - $distance / $maxLen) * 100 : 0;
+$anchorUpper = strtoupper($anchorName);
+$maxLen      = max(strlen($anchorUpper), strlen($passportName));
+$distance    = levenshtein($anchorUpper, $passportName);
+$matchScore  = ($maxLen > 0) ? (1 - $distance / $maxLen) * 100 : 0;
 
-if ($matchScore >= 85) {
+// 3.5 Duplicate Check (Primary Fraud Prevention)
+$isDuplicate = checkBlindIndex($dbh, $passportNumber, $uid);
+
+if ($isDuplicate) {
+    // FORCE Admin Review for duplicates
+    $newStatus = 'pending';
+    $mismatch  = 'FLAGGED: Duplicate passport number detected. Requires manual investigation.';
+    if ($matchScore < 40) {
+        $mismatch = 'CRITICAL FLAG: Duplicate passport number AND Name Mismatch (' . round($matchScore, 1) . '% match). High probability of fraud.';
+    }
+} elseif ($matchScore >= 85) {
     // Tier 1: Auto-Approve
     $newStatus = 'verified';
     $mismatch  = null;
+    // Lock the FullName to the passport name upon verification
     $dbh->prepare('UPDATE tbluser SET FullName=:n WHERE ID=:uid')
         ->execute([':n' => $passportName, ':uid' => $uid]);
 } elseif ($matchScore >= 40) {
     // Tier 2: Admin Review
     $newStatus = 'pending';
-    $mismatch  = 'Score:' . round($matchScore, 1) . '% | OAuth:' . $oauthName . ' | Passport:' . $passportName;
+    $mismatch  = 'Score:' . round($matchScore, 1) . '% | Anchor:' . $anchorName . ' | Passport:' . $passportName;
 } else {
-    // Tier 3: Hard Block
+    // Tier 3: Hard Block (Reject)
     $newStatus = 'rejected';
-    $mismatch  = 'HARD BLOCK Score:' . round($matchScore, 1) . '% | OAuth:' . $oauthName . ' | Passport:' . $passportName;
+    $mismatch  = 'HARD BLOCK Score:' . round($matchScore, 1) . '% | Anchor:' . $anchorName . ' | Passport:' . $passportName;
+}
+
+// 3.8 OCR Variance Check (Detection of manual tampering vs typos)
+$rawOcrName   = strtoupper(trim($_POST['raw_ocr_name'] ?? ''));
+$rawOcrNumber = strtoupper(trim($_POST['raw_ocr_number'] ?? ''));
+
+$isHighVariance = false;
+$varianceReason = '';
+
+// If passport number was changed at all, it's a variance (could be typo fix or fraud)
+if ($passportNumber !== $rawOcrNumber) {
+    $isHighVariance = true;
+    $varianceReason = 'Passport Number Edited (OCR: '.$rawOcrNumber.' | Submitted: '.$passportNumber.')';
+}
+
+// Check name variance (if user changed more than 20% of what OCR got)
+if ($rawOcrName !== '') {
+    $nameDist = levenshtein($rawOcrName, $passportName);
+    $nameVar  = (max(strlen($rawOcrName), strlen($passportName)) > 0) ? ($nameDist / max(strlen($rawOcrName), strlen($passportName))) : 0;
+    if ($nameVar > 0.2) { // More than 20% difference
+        $isHighVariance = true;
+        $varianceReason .= ($varianceReason ? ' | ' : '') . 'Significant Name Edit ('.round($nameVar*100).'% change)';
+    }
+}
+
+if ($isHighVariance && $newStatus === 'verified') {
+    // Demote auto-verified to pending if they edited the data significantly
+    $newStatus = 'pending';
+    $mismatch = 'MANUAL REVIEW REQUIRED: ' . $varianceReason;
 }
 
 // 3.1 Age Check (Must be 18+)
@@ -117,13 +160,36 @@ $log->execute([
     ':ipath'  => $finalImagePath,
 ]);
 
-// 9. Update tbluser
+// 10. Audit Log
+$logMsg = "Status: $newStatus | Score: " . round($matchScore, 1) . "%";
+if ($mismatch) $logMsg .= " | Details: " . $mismatch;
+logKycAction($dbh, $uid, 'KYC_CROSSCHECK_COMPLETED', $logMsg);
+
+// 11. Update tbluser
 $upd = $dbh->prepare(
     'UPDATE tbluser SET kyc_status=:s, kyc_verified_at=IF(:s="verified", NOW(), kyc_verified_at),
             kyc_expiry_date=:exp WHERE ID=:uid'
 );
 $upd->execute([':s' => $newStatus, ':exp' => $kycExpiry, ':uid' => $uid]);
 
-header('Location: kyc-status.php');
+if ($newStatus === 'pending') {
+    if (isset($isHighVariance) && $isHighVariance) {
+        $_SESSION['kyc_msg'] = 'Your manual corrections differ significantly from the automated detection. For your security, this submission has been queued for manual administrative review (1-2 business days).';
+    } else {
+        $_SESSION['kyc_msg'] = 'Your verification has been queued for manual administrative review. Please wait 1-2 business days.';
+    }
+    $_SESSION['kyc_msg_type'] = 'info';
+}
+
+// Contextual Redirect
+$rmid = isset($_POST['rmid']) ? intval($_POST['rmid']) : null;
+
+if ($newStatus === 'verified') {
+    $redirect = $rmid ? "book-room.php?rmid=$rmid" : "kyc-status.php";
+} else {
+    $redirect = $rmid ? "kyc-status.php?rmid=$rmid" : "kyc-status.php";
+}
+
+header("Location: $redirect");
 exit;
 ?>

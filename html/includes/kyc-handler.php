@@ -111,4 +111,22 @@ function checkBlindIndex($dbh, $passportNumber, $currentUserId) {
     
     return (int)$stmt->fetchColumn() > 0;
 }
+
+/**
+ * Logs a KYC related action to the audit log table.
+ */
+function logKycAction($dbh, $userId, $action, $details = null) {
+    $stmt = $dbh->prepare("
+        INSERT INTO tbl_kyc_audit_log (user_id, action, details, ip_address, user_agent) 
+        VALUES (:uid, :action, :details, :ip, :ua)
+    ");
+    
+    $stmt->execute([
+        ':uid'     => $userId,
+        ':action'  => $action,
+        ':details' => $details,
+        ':ip'      => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+        ':ua'      => $_SERVER['HTTP_USER_AGENT'] ?? 'SYSTEM'
+    ]);
+}
 ?>

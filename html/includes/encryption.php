@@ -20,6 +20,25 @@ function encryptField($data) {
 }
 
 /**
+ * Decrypts a field using AES-256-GCM
+ */
+function decryptField($data) {
+    if (empty($data)) return null;
+    
+    $key = getenv('KYC_ENCRYPTION_KEY') ?: 'HBMS_SUPER_SECRET_KEY_123';
+    $key = hash('sha256', $key, true);
+    
+    $cipher = "aes-256-gcm";
+    $ivlen = openssl_cipher_iv_length($cipher);
+    
+    $iv         = substr($data, 0, $ivlen);
+    $tag        = substr($data, $ivlen, 16);
+    $ciphertext = substr($data, $ivlen + 16);
+    
+    return openssl_decrypt($ciphertext, $cipher, $key, $options=OPENSSL_RAW_DATA, $iv, $tag);
+}
+
+/**
  * Computes a deterministic "blind index" (hash) for a field
  * This allows us to search for duplicate passport numbers without decrypting them.
  */
