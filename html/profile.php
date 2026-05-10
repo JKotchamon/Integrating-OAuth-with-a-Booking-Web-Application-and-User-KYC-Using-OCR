@@ -97,6 +97,35 @@ foreach($results as $row) { $result = $row; ?>
                         <div class="alert alert-warning">Account unlinked successfully.</div>
                     <?php endif; ?>
 
+                    <!-- KYC Verification Status Badge -->
+                    <div style="background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="display: flex; align-items: center;">
+                            <div style="font-size: 20px; margin-right: 15px;">
+                                <?php if ($row->kyc_status === 'verified'): ?>
+                                    <i class="glyphicon glyphicon-ok-sign" style="color: #2ecc71;"></i>
+                                <?php elseif ($row->kyc_status === 'pending'): ?>
+                                    <i class="glyphicon glyphicon-time" style="color: #f1c40f;"></i>
+                                <?php else: ?>
+                                    <i class="glyphicon glyphicon-exclamation-sign" style="color: #e74c3c;"></i>
+                                <?php endif; ?>
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: #333;">KYC Status</div>
+                                <div style="font-size: 13px; color: #777;">
+                                    <?php 
+                                        if ($row->kyc_status === 'verified') echo 'Your identity is verified and secured.';
+                                        elseif ($row->kyc_status === 'pending') echo 'Your documents are currently under review.';
+                                        elseif ($row->kyc_status === 'expired') echo 'Your verification has expired. Please update it.';
+                                        else echo 'Verification is required to book rooms.';
+                                    ?>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="kyc-status.php" class="btn btn-sm" style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 20px; padding: 5px 15px; color: #555; font-weight: 600;">
+                            <?php echo ($row->kyc_status === 'verified') ? 'View Details' : 'Verify Now'; ?>
+                        </a>
+                    </div>
+
                     <!-- Connected Accounts Section -->
                     <div class="row" style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 30px; margin-bottom: 30px;">
                         <div class="col-md-12">
