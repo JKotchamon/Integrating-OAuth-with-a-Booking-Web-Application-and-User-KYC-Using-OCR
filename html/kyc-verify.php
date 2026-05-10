@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['passport'])) {
         $error = 'You must agree to the terms before uploading.';
     } else {
         $file = $_FILES['passport'];
-        $allowed = ['image/jpeg', 'image/png'];
+        $allowed = ['image/jpeg', 'image/png', 'image/webp'];
         $maxSize = 10 * 1024 * 1024; // 10MB raw max
 
         if ($file['error'] !== UPLOAD_ERR_OK) {
@@ -232,8 +232,8 @@ unset($_SESSION['kyc_msg']);
 
                         <?php if (!$ocrData && !$blocked): ?>
                             <p style="margin-bottom: 20px; font-size: 1.1em; color: #555;">
-                                To keep everything secure, we need to verify your identity before you can book. 
-                                Just upload a clear photo of your <strong>Passport</strong>.
+                                Secure Identity Anchoring: To keep our community safe, we use advanced OCR to verify your identity. 
+                                It's a quick one-time process—just upload a clear photo of your <strong>Passport</strong>.
                             </p>
 
                             <form method="post" enctype="multipart/form-data" style="background: #fdfdfd; padding: 40px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
@@ -241,9 +241,9 @@ unset($_SESSION['kyc_msg']);
                                     <label style="font-weight: 600; display: block; margin-bottom: 12px; color: #333;">Passport Main Page (with photo):</label>
                                     <div class="upload-zone" style="padding: 20px; text-align: center; border-radius: 8px; background: #fff; cursor: pointer;" onclick="$('#passport_file').click();">
                                         <i class="glyphicon glyphicon-camera" style="font-size: 32px; color: #999; margin-bottom: 10px;"></i>
-                                        <p id="file-name" style="color: #666;">Click to select or drag and drop (JPG/PNG)</p>
+                                        <p id="file-name" style="color: #666;">Click to select or drag and drop (JPG/PNG/WebP)</p>
                                     </div>
-                                    <input type="file" id="passport_file" name="passport" accept="image/jpeg,image/png" style="display: none;" onchange="if(this.files[0]) $('#file-name').text(this.files[0].name);">
+                                    <input type="file" id="passport_file" name="passport" accept="image/jpeg,image/png,image/webp" style="display: none;" onchange="if(this.files[0]) $('#file-name').text(this.files[0].name);">
                                     <small class="text-muted" style="display:block; margin-top:10px;">Make sure the text at the bottom is clear and readable.</small>
                                 </div>
 
@@ -263,7 +263,7 @@ unset($_SESSION['kyc_msg']);
                         <?php if ($ocrData && isset($ocrData['success']) && $ocrData['success']): ?>
                             <div class="panel panel-success" style="margin-top: 20px;">
                                 <div class="panel-heading">
-                                    <h3 class="panel-title">Please confirm your legal details extracted from your passport</h3>
+                                    <h3 class="panel-title">Our AI extracted the following details. Please ensure they are 100% correct.</h3>
                                 </div>
                                 <div class="panel-body">
                                     <form method="POST" action="kyc-crosscheck.php">

@@ -7,23 +7,29 @@ if (isset($_SESSION['hbmsuid']) && !empty($_SESSION['hbmsuid'])) {
     $query->execute();
     $userKyc = $query->fetch(PDO::FETCH_ASSOC);
     
-    if ($userKyc && $userKyc['kyc_status'] !== 'verified') {
+    if ($userKyc) {
         $bannerMsg = "";
         $bannerClass = "kyc-banner-danger";
+        $bannerIcon = "glyphicon-exclamation-sign";
         
         switch($userKyc['kyc_status']) {
             case 'unverified':
-                $bannerMsg = "Action Required: Your identity is not verified. You cannot book rooms until verification is complete.";
+                $bannerMsg = "Action Required: Your identity is not verified. Please verify to enable room bookings.";
                 break;
             case 'pending':
-                $bannerMsg = "Status: Your identity verification is currently under review by our administration team.";
+                $bannerMsg = "Status: Our AI is currently analyzing your documents, followed by a final review by our team.";
                 $bannerClass = "kyc-banner-warning";
                 break;
             case 'rejected':
-                $bannerMsg = "Alert: Identity verification failed. Please review your documents and try again.";
+                $bannerMsg = "Verification Issue: We couldn't verify your identity. Please try again with a clearer photo.";
                 break;
             case 'expired':
                 $bannerMsg = "Alert: Your identity verification has expired. Please re-verify to continue booking.";
+                break;
+            case 'verified':
+                $bannerMsg = "Identity Verified: You're all set! Enjoy full access to all booking features.";
+                $bannerClass = "kyc-banner-success";
+                $bannerIcon = "glyphicon-ok-circle";
                 break;
         }
 
@@ -44,13 +50,14 @@ if (isset($_SESSION['hbmsuid']) && !empty($_SESSION['hbmsuid'])) {
                 }
                 .kyc-banner-danger { background: linear-gradient(90deg, #d9534f 0%, #c9302c 100%); }
                 .kyc-banner-warning { background: linear-gradient(90deg, #f0ad4e 0%, #ec971f 100%); }
+                .kyc-banner-success { background: linear-gradient(90deg, #5cb85c 0%, #449d44 100%); }
                 .btn-kyc-banner { background: rgba(255,255,255,0.15); border: 1px solid #fff; color: #fff; padding: 4px 15px; border-radius: 20px; margin-left: 15px; text-decoration: none; transition: all 0.3s ease; font-size: 12px; text-transform: uppercase; }
                 .btn-kyc-banner:hover { background: #fff; color: #333; text-decoration: none; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
                 @media (max-width: 768px) { .btn-kyc-banner { display: block; margin: 10px auto 0; width: fit-content; } }
             </style>';
             echo '<div class="kyc-global-banner ' . $bannerClass . '">
                     <div class="container">
-                        <i class="glyphicon glyphicon-exclamation-sign" style="margin-right: 8px;"></i> ' . $bannerMsg . ' 
+                        <i class="glyphicon ' . $bannerIcon . '" style="margin-right: 8px;"></i> ' . $bannerMsg . ' 
                         <a href="kyc-status.php" class="btn-kyc-banner">View Status</a>
                     </div>
                   </div>';

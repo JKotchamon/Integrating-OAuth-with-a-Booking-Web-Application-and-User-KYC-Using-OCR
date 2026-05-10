@@ -94,7 +94,7 @@ if ($rawOcrName !== '') {
 if ($isHighVariance && $newStatus === 'verified') {
     // Demote auto-verified to pending if they edited the data significantly
     $newStatus = 'pending';
-    $mismatch = 'MANUAL REVIEW REQUIRED: ' . $varianceReason;
+    $mismatch = 'OCR VARIANCE DETECTED: Manual review triggered due to significant field adjustment.';
 }
 
 // 3.1 Age Check (Must be 18+)

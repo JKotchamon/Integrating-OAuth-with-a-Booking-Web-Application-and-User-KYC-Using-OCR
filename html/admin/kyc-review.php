@@ -33,7 +33,7 @@ if (isset($_POST['kyc_action']) && isset($_POST['record_id'])) {
         if (empty($adminReason)) {
             if ($newStatus === 'verified') $adminReason = 'Approved';
             elseif ($newStatus === 'blocked') $adminReason = 'Account restricted due to high fraud risk.';
-            else $adminReason = 'Your documents were rejected after manual review. Please ensure your photo is clear and matches your account details.';
+            else $adminReason = 'Our team has reviewed the documents flagged by our AI and unfortunately could not verify your identity. Please ensure your photo is clear and matches your account details.';
         }
 
         $dbh->prepare("UPDATE tbl_kyc_records SET verification_status = :st, rejection_reason = :re, verified_at = NOW(), verified_by = :admin WHERE ID = :rid")

@@ -69,13 +69,15 @@ if ($status === 'verified' && $expiry) {
 
                         <?php if ($status === 'pending'): ?>
                             <div class="alert alert-info">
-                                <i class="glyphicon glyphicon-time" style="font-size: 24px; display: block; margin-bottom: 10px;"></i>
-                                <h4 style="margin-bottom: 10px;">Verification Under Review</h4>
-                                <p>Your identity documents are currently being reviewed by our team.</p>
+                                <h4 style="margin-bottom: 10px;">Verification In Progress</h4>
+                                <p>Our AI is currently analyzing your documents, followed by a final review by our administrative team.</p>
                                 
-                                <?php if (strpos($reason, 'Duplicate') !== false): ?>
                                     <div style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #31708f;">
                                         <strong>Security Flag:</strong> We detected that this document might be associated with another account. We need to manually verify this to ensure your account security.
+                                    </div>
+                                <?php elseif (strpos($reason, 'VARIANCE') !== false): ?>
+                                    <div style="background: rgba(0,0,0,0.05); padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #31708f;">
+                                        <strong>Manual Review Triggered:</strong> We noticed a slight mismatch between your input and the document scan. Our team is manually reviewing this to assist you.
                                     </div>
                                 <?php elseif ($reason): ?>
                                     <p style="margin-top: 10px; font-style: italic; color: #555;">Note: <?php echo htmlspecialchars($reason); ?></p>
