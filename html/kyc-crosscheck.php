@@ -1,4 +1,3 @@
-// ...existing code...
 <?php
 session_start();
 require_once 'includes/auth_check.php';
@@ -7,6 +6,14 @@ require_once 'includes/encryption.php';
 require_once 'includes/kyc-handler.php';
 
 $uid = $_SESSION['hbmsuid'];
+
+// 0. Security: Rate Limiting (Brute Force Protection)
+if (!checkRateLimit($dbh, 'KYC_VERIFY_ATTEMPT', 5, 600)) {
+    logKycAction($dbh, $uid, 'RATE_LIMIT_EXCEEDED', 'User exceeded verification attempt limit');
+    echo "<script>alert('Too many verification attempts. Please wait 10 minutes before trying again.');</script>";
+    echo "<script>window.location.href='kyc-status.php';</script>";
+    exit;
+}
 
 // 1. Get Anchor Name (registration_name) from tbluser
 // We match against the name at registration, not the current profile name, to prevent impersonation.

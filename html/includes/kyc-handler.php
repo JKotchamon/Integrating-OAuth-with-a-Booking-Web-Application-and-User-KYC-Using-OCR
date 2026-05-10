@@ -111,4 +111,59 @@ function checkBlindIndex($dbh, $passportNumber, $currentUserId) {
     
     return (int)$stmt->fetchColumn() > 0;
 }
+
+
+/**
+ * Simple Rate Limiter to prevent brute-force probing using the audit log.
+ * @param string $action The key for the rate limit (e.g., 'KYC_VERIFY_ATTEMPT')
+ * @param int $limit Max requests
+ * @param int $window Time window in seconds
+ * @return bool True if allowed, False if blocked
+ */
+function checkRateLimit($dbh, $action, $limit = 5, $window = 300) {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    
+    // Count actions from this IP in the last $window seconds
+    $stmt = $dbh->prepare("
+        SELECT COUNT(*) FROM tbl_kyc_audit_log 
+        WHERE ip_address = :ip 
+        AND action = :action 
+        AND created_at > (NOW() - INTERVAL $window SECOND)
+    ");
+    
+    $stmt->execute([
+        ':ip' => $ip,
+        ':action' => $action
+    ]);
+    
+    return $stmt->fetchColumn() < $limit;
+}
+
+/**
+ * Logs a KYC related action with a tamper-evident signature.
+ */
+function logKycAction($dbh, $userId, $action, $details = null) {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'SYSTEM';
+    
+    // Create a signature of the data to prevent tampering
+    $pepper = getenv('KYC_BLIND_INDEX_PEPPER') ?: 'HBMS_PEPPER_2024_STRICT';
+    $sigData = $userId . $action . $details . $ip . $ua;
+    $signature = hash_hmac('sha256', $sigData, $pepper);
+
+    $stmt = $dbh->prepare("
+        INSERT INTO tbl_kyc_audit_log (user_id, action, details, ip_address, user_agent, log_signature) 
+        VALUES (:uid, :action, :details, :ip, :ua, :sig)
+    ");
+    
+    $stmt->execute([
+        ':uid'     => $userId,
+        ':action'  => $action,
+        ':details' => $details,
+        ':ip'      => $ip,
+        ':ua'      => $ua,
+        ':sig'     => $signature
+    ]);
+}
 ?>
+
